@@ -1,0 +1,57 @@
+# Nutzung:
+#
+#   Ohne echtes lokales Sprachmodell (Demo/Entwicklung, Mock-KI-Server):
+#     AI_BASE_URL=http://mock-ai:8100/v1 AI_MODEL=mock-model \
+#       docker compose --profile mock up --build
+#
+#   Mit echtem lokalem Sprachmodell über Ollama (siehe README für Modell-Pull):
+#     AI_BASE_URL=http://ollama:11434/v1 AI_MODEL=gemma3n:e4b \
+#       docker compose --profile real up --build
+#     (einmalig zusätzlich: docker compose exec ollama ollama pull gemma3n:e4b)
+#
+# Am einfachsten: die gewünschten AI_BASE_URL/AI_MODEL-Werte in eine lokale
+# ".env"-Datei schreiben (siehe .env.example) statt sie jedes Mal voranzustellen.
+#
+# In beiden Fällen startet der "app"-Dienst auch unabhängig/allein
+# (z.B. "docker compose up app"): die nicht-KI-Funktionen (Preisverlauf,
+# Vorhersage, Tankzeit-Empfehlung) bleiben dann verfügbar, nur die
+# KI-Frage-Funktion meldet über /health, dass das KI-Backend nicht
+# erreichbar ist.
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:///./data/app.db
+      # Kein Default hier bewusst: der richtige Wert hängt vom gewählten
+      # Profil ab (mock-ai vs. ollama) - siehe Hinweise oben und README.
+      AI_BASE_URL: ${AI_BASE_URL:?bitte AI_BASE_URL setzen, siehe Kommentar oben}
+      AI_MODEL: ${AI_MODEL:?bitte AI_MODEL setzen, siehe Kommentar oben}
+      AI_API_KEY: ${AI_API_KEY:-not-needed-for-local-inference}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-20}
+      AI_MAX_RETRIES: ${AI_MAX_RETRIES:-1}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  mock-ai:
+    build: .
+    command: ["uvicorn", "mock_llm_server.server:app", "--host", "0.0.0.0", "--port", "8100"]
+    ports:
+      - "8100:8100"
+    profiles: ["mock"]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    profiles: ["real"]
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

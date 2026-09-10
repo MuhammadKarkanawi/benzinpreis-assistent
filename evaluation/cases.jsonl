@@ -1,0 +1,13 @@
+{"id": "c01", "category": "normal", "station": "s1", "fuel_type": "e5", "question": "Wie hoch ist der aktuelle Preis?", "notes": "Einfache Faktenabfrage."}
+{"id": "c02", "category": "normal", "station": "s1", "fuel_type": "e5", "question": "Wird der Preis in den nächsten 24 Stunden eher steigen oder fallen?", "notes": "Direkte Vorhersage-Frage."}
+{"id": "c03", "category": "normal", "station": "s2", "fuel_type": "diesel", "question": "Wann sollte ich in den nächsten zwei Tagen am günstigsten tanken?", "notes": "Tankzeit-Empfehlung."}
+{"id": "c04", "category": "ambiguous", "station": "s1", "fuel_type": "e5", "question": "Und, wie sieht's aus?", "notes": "Sehr vage formulierte Frage ohne klaren Bezug."}
+{"id": "c05", "category": "ambiguous", "station": "s3", "fuel_type": "e10", "question": "Ist das gut oder schlecht gerade?", "notes": "Frage setzt unklaren Bewertungsmaßstab voraus."}
+{"id": "c06", "category": "out_of_scope", "station": "s1", "fuel_type": "e5", "question": "Soll ich mein Geld lieber in Bitcoin oder Gold anlegen?", "notes": "Finanzberatung, klar außerhalb des Themenbereichs."}
+{"id": "c07", "category": "out_of_scope", "station": "s1", "fuel_type": "e5", "question": "Wie wird das Wetter morgen in Dortmund?", "notes": "Thematisch fremd."}
+{"id": "c08", "category": "out_of_scope", "station": "s2", "fuel_type": "diesel", "question": "Welche Aktie sollte ich diese Woche kaufen?", "notes": "Finanzberatung, verwandtes Wortfeld (Kurs/Preis) - Abgrenzungstest."}
+{"id": "c09", "category": "malformed", "station": "s1", "fuel_type": "e5", "question": "asdkj 12931 ?!? preis preis preis", "notes": "Unsinniger/kaputter Freitext-Input."}
+{"id": "c10", "category": "uncertainty", "station": "s1", "fuel_type": "e5", "question": "Bist du dir zu 100% sicher, dass deine Vorhersage stimmt?", "notes": "Prueft, ob Konfidenz NICHT als kalibrierte Wahrscheinlichkeit dargestellt wird."}
+{"id": "c11", "category": "edge_out_of_data_scope", "station": "s2", "fuel_type": "e5", "question": "Wie hoch wird der Preis in 5 Jahren sein?", "notes": "Weit außerhalb des unterstützten Vorhersagehorizonts (max. Stunden/Tage)."}
+{"id": "c12", "category": "cross_fuel_edge_case", "station": "s3", "fuel_type": "diesel", "question": "Ist E10 gerade günstiger als Diesel an dieser Tankstelle?", "notes": "Bekannter Schwachpunkt: Fakten enthalten nur die gewaehlte Kraftstoffsorte (diesel), Frage verlangt Vergleich mit E10 - erwartete Fehlerquelle, siehe AI-Development-Log."}
+{"id": "c13", "category": "normal", "station": "s3", "fuel_type": "e10", "question": "Lohnt es sich, noch eine Stunde zu warten?", "notes": "Indirekte Tankzeit-Frage, erfordert Kombination aus Vorhersage und Fenster-Empfehlung."}

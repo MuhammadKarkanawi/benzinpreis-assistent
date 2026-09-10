@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Benzinpreis-Assistent</title>
+<style>
+  :root {
+    --bg: #0f1720; --panel: #17212b; --text: #e8edf2; --muted: #93a2b0;
+    --accent: #4fd1c5; --up: #f28b82; --down: #81c995; --stable: #93a2b0;
+    --border: #263241;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; font-size: 0.9rem; }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  label { font-size: 0.8rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  select, input, button, textarea {
+    background: #0d151d; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-size: 0.9rem;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; align-items: end; }
+  button { cursor: pointer; background: var(--accent); color: #05221f; font-weight: 600; border: none; }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  canvas { width: 100%; height: 220px; display: block; }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 0.9rem; }
+  .stat:last-child { border-bottom: none; }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .badge.steigend { background: rgba(242,139,130,0.2); color: var(--up); }
+  .badge.fallend { background: rgba(129,201,149,0.2); color: var(--down); }
+  .badge.stabil { background: rgba(147,162,176,0.2); color: var(--stable); }
+  #answer { white-space: pre-wrap; margin-top: 10px; font-size: 0.92rem; line-height: 1.4; }
+  .flag { color: var(--up); font-size: 0.8rem; margin-top: 6px; }
+  textarea { width: 100%; min-height: 56px; resize: vertical; }
+  .checkbox-row { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+  .footer-note { color: var(--muted); font-size: 0.75rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+  <h1>⛽ Benzinpreis-Assistent</h1>
+  <p class="sub">Zeitreihen-Vorhersage &amp; lokal betriebene KI-Erklärung für Kraftstoffpreise (Demo-Daten)</p>
+
+  <div class="row">
+    <div>
+      <label for="station">Tankstelle</label>
+      <select id="station"></select>
+    </div>
+    <div>
+      <label for="fuel">Kraftstoff</label>
+      <select id="fuel">
+        <option value="e5">Super E5</option>
+        <option value="e10">Super E10</option>
+        <option value="diesel">Diesel</option>
+      </select>
+    </div>
+    <div>
+      <button id="reload">Aktualisieren</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <label>Preisverlauf (letzte 14 Tage)</label>
+        <canvas id="chart"></canvas>
+      </div>
+
+      <div class="panel">
+        <label>Frage an den KI-Assistenten</label>
+        <textarea id="question" placeholder="z.B. Wird der Preis heute noch fallen?"></textarea>
+        <div class="row" style="margin-top:8px;">
+          <button id="ask">Fragen</button>
+          <div class="checkbox-row">
+            <input type="checkbox" id="useContext" checked>
+            <label for="useContext" style="margin:0;">Mit gestütztem Kontext (grounded)</label>
+          </div>
+        </div>
+        <div id="answer"></div>
+        <div id="flag" class="flag"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <label>Vorhersage (24h)</label>
+        <div id="forecastBox">–</div>
+      </div>
+      <div class="panel">
+        <label>Beste Tankzeit (nächste 48h)</label>
+        <div id="windowBox">–</div>
+      </div>
+      <div class="panel">
+        <label>Status</label>
+        <div id="healthBox">–</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer-note">
+    Vorhersage &amp; Empfehlung sind statistische Schätzungen auf Basis historischer Muster, keine Garantie.
+    Der Konfidenzwert ist ein heuristischer Vertrauenswert, keine kalibrierte Wahrscheinlichkeit.
+  </p>
+
+<script>
+const API = "";
+
+async function fetchJSON(url, options) {
+  const res = await fetch(url, options);
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+function currentStation() { return document.getElementById('station').value; }
+function currentFuel() { return document.getElementById('fuel').value; }
+
+async function loadStations() {
+  const stations = await fetchJSON(`${API}/stations`);
+  const sel = document.getElementById('station');
+  sel.innerHTML = stations.map(s => `<option value="${s.uuid}">${s.name} (${s.place})</option>`).join('');
+}
+
+function drawChart(points) {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 220 * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, rect.width, 220);
+
+  if (!points.length) { return; }
+  const prices = points.map(p => p.price);
+  const min = Math.min(...prices) - 0.01, max = Math.max(...prices) + 0.01;
+  const w = rect.width, h = 220, pad = 8;
+
+  ctx.strokeStyle = '#4fd1c5';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = pad + (i / (points.length - 1)) * (w - 2 * pad);
+    const y = h - pad - ((p.price - min) / (max - min)) * (h - 2 * pad);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = '#93a2b0';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(max.toFixed(3) + ' €', 4, 12);
+  ctx.fillText(min.toFixed(3) + ' €', 4, h - 4);
+}
+
+async function loadPrices() {
+  const data = await fetchJSON(`${API}/prices/${currentStation()}?fuel_type=${currentFuel()}&days=14`);
+  drawChart(data.points);
+}
+
+async function loadForecast() {
+  const box = document.getElementById('forecastBox');
+  box.textContent = 'lädt…';
+  try {
+    const f = await fetchJSON(`${API}/forecast/${currentStation()}?fuel_type=${currentFuel()}&horizon_hours=24`);
+    box.innerHTML = `
+      <div class="stat"><span>Aktueller Preis</span><b>${f.current_price?.toFixed(3)} €</b></div>
+      <div class="stat"><span>Vorhersage (24h)</span><b>${f.predicted_price.toFixed(3)} €</b></div>
+      <div class="stat"><span>Richtung</span><span class="badge ${f.predicted_direction}">${f.predicted_direction}</span></div>
+      <div class="stat"><span>Konfidenz (heuristisch)</span><b>${f.confidence}</b></div>
+      <div class="stat"><span>Methode</span><span style="text-align:right; max-width:60%; word-break:break-word;">${f.method.replaceAll('_',' ').replaceAll('+',' + ')}</span></div>
+    `;
+    const w = document.getElementById('windowBox');
+    if (f.best_refuel_window_start) {
+      const start = new Date(f.best_refuel_window_start).toLocaleString('de-DE');
+      const end = new Date(f.best_refuel_window_end).toLocaleString('de-DE');
+      w.innerHTML = `<div class="stat"><span>Zeitfenster</span><b>${start} – ${end}</b></div>`;
+    }
+  } catch (e) {
+    box.textContent = 'Nicht genug Historie für eine Vorhersage.';
+  }
+}
+
+async function loadHealth() {
+  const box = document.getElementById('healthBox');
+  try {
+    const h = await fetchJSON(`${API}/health`);
+    box.innerHTML = `
+      <div class="stat"><span>Status</span><b>${h.status}</b></div>
+      <div class="stat"><span>Datenbank</span><span>${h.database ? 'ok' : 'Fehler'}</span></div>
+      <div class="stat"><span>KI-Backend erreichbar</span><span>${h.ai_backend_reachable}</span></div>
+      <div class="stat"><span>Modell</span><span>${h.ai_model}</span></div>
+    `;
+  } catch (e) {
+    box.textContent = 'Status nicht abrufbar.';
+  }
+}
+
+async function ask() {
+  const question = document.getElementById('question').value.trim();
+  if (!question) return;
+  const answerBox = document.getElementById('answer');
+  const flagBox = document.getElementById('flag');
+  answerBox.textContent = 'Frage wird gestellt…';
+  flagBox.textContent = '';
+  try {
+    const result = await fetchJSON(`${API}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        station_uuid: currentStation(),
+        fuel_type: currentFuel(),
+        question,
+        use_context: document.getElementById('useContext').checked,
+      }),
+    });
+    answerBox.textContent = result.answer;
+    if (result.flagged_ungrounded) {
+      flagBox.textContent = '⚠️ Automatische Prüfung: Antwort enthält evtl. nicht durch Fakten gedeckte Zahlen.';
+    }
+  } catch (e) {
+    answerBox.textContent = 'Fehler: ' + e.message;
+  }
+}
+
+document.getElementById('reload').addEventListener('click', () => { loadPrices(); loadForecast(); });
+document.getElementById('ask').addEventListener('click', ask);
+document.getElementById('station').addEventListener('change', () => { loadPrices(); loadForecast(); });
+document.getElementById('fuel').addEventListener('change', () => { loadPrices(); loadForecast(); });
+
+(async function init() {
+  await loadStations();
+  await loadPrices();
+  await loadForecast();
+  await loadHealth();
+})();
+</script>
+</body>
+</html>
