@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+.idea/
+.DS_Store
+.env
+.env.example
+docs/
+evaluation/results/
+README.md
+AI_DEVELOPMENT_LOG.md

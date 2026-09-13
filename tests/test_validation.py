@@ -33,3 +33,17 @@ def test_is_grounded_false_when_ungrounded_but_claims_numbers():
 def test_is_grounded_within_tolerance():
     text = "Der Preis liegt bei etwa 1.74 EUR."  # 1 Cent Differenz zu 1.739
     assert is_grounded(text, FACTS, tolerance=0.02) is True
+
+
+def test_is_grounded_true_when_confidence_stated_as_percentage():
+    # Regression-Test fuer einen mit dem echten Modell (gemma3:4b) gefundenen
+    # Fall: die Antwort formuliert den heuristischen Konfidenzwert 0.8 aus
+    # den FAKTEN korrekt als "80%" statt als "0.8" - das ist eine legitime
+    # Umrechnung und darf nicht als erfundene Zahl gewertet werden.
+    text = "Die Vorhersage hat einen geschaetzten Vertrauenswert von 80,0 %."
+    assert is_grounded(text, FACTS) is True
+
+
+def test_is_grounded_false_when_percentage_does_not_match_any_fact():
+    text = "Ich bin mir zu 55,0 % sicher."
+    assert is_grounded(text, FACTS) is False

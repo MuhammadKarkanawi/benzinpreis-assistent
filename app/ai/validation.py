@@ -36,6 +36,22 @@ def extract_decimal_numbers(text: str) -> list[float]:
     return found
 
 
+def _expand_with_percentage_form(numbers: list[float]) -> list[float]:
+    """Ergänzt Fakten-Zahlen, die als Anteil 0-1 vorliegen (z.B. ein
+    heuristischer Konfidenzwert `0.781`), um ihre Prozent-Schreibweise
+    (`78.1`). Ein Sprachmodell formuliert einen solchen Wert in einer
+    deutschen Antwort erfahrungsgemäß eher als "78,1 %" statt als "0,781" -
+    das ist eine legitime, korrekte Umrechnung und keine erfundene Zahl.
+    Ohne diese Erweiterung würde `is_grounded()` solche (korrekten!)
+    Prozentangaben fälschlich als nicht gegründet einstufen (in der
+    Praxis beobachtet, siehe AI_DEVELOPMENT_LOG.md Episode 7)."""
+    expanded = list(numbers)
+    for k in numbers:
+        if 0.0 <= k <= 1.0:
+            expanded.append(round(k * 100, 4))
+    return expanded
+
+
 def is_grounded(answer_text: str, facts: dict | None, tolerance: float = TOLERANCE_EUR) -> bool:
     """Gibt True zurück, wenn alle im Antworttext gefundenen Dezimalzahlen
     (typischerweise Preise) innerhalb der Toleranz zu einer Zahl aus den
@@ -48,6 +64,7 @@ def is_grounded(answer_text: str, facts: dict | None, tolerance: float = TOLERAN
     known_numbers = list(_flatten_numbers(facts)) if facts else []
     if not known_numbers:
         return False
+    known_numbers = _expand_with_percentage_form(known_numbers)
 
     for n in numbers_in_answer:
         if not any(abs(n - k) <= tolerance for k in known_numbers):

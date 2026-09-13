@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session
 
+from app.ai.client import AIClient
 from app.config import get_settings
 from app.data_loader import seed_from_csv
 from app.db import engine, init_db
@@ -13,6 +15,24 @@ from app.routers import ask, forecast, health, prices, stations
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR.parent / "data"
+
+
+async def _warm_up_ai_backend() -> None:
+    """Feuert einmalig einen (nicht abgewarteten) Testaufruf an die lokale
+    KI-Komponente ab, damit ein echter Inference-Server (z.B. Ollama) das
+    Modell schon während des App-Starts laedt, statt erst beim ersten
+    echten Nutzer-Request - sonst kann dieser aufgrund des Kaltstarts in
+    ein Timeout laufen, obwohl der Server grundsaetzlich erreichbar ist.
+    Rein "best effort": Fehler (z.B. Server noch nicht bereit) werden nur
+    geloggt, blockieren den App-Start aber nicht. Gefunden bei der
+    KI-Evaluation mit dem echten Modell, siehe AI_DEVELOPMENT_LOG.md
+    Episode 7."""
+    try:
+        client = AIClient(get_settings())
+        await client.chat([{"role": "user", "content": "Hallo"}])
+        print("[startup] KI-Backend erfolgreich vorgewaermt.")
+    except Exception as exc:  # noqa: BLE001 - Warm-up ist bewusst best-effort
+        print(f"[startup] KI-Warm-up fehlgeschlagen (ignoriert): {exc}")
 
 
 @asynccontextmanager
@@ -24,7 +44,11 @@ async def lifespan(app: FastAPI):
             print(f"[startup] Seed-Ergebnis: {result}")
         except FileNotFoundError as exc:
             print(f"[startup] Warnung: {exc}")
-    yield
+    warm_up_task = asyncio.create_task(_warm_up_ai_backend())
+    try:
+        yield
+    finally:
+        warm_up_task.cancel()
 
 
 settings = get_settings()

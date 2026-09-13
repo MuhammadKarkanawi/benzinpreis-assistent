@@ -73,7 +73,7 @@ Betrieb.
 - Ein lokaler, OpenAI-kompatibler Inference-Server für die echte KI-Komponente,
   z.B. [Ollama](https://ollama.com):
   ```bash
-  ollama pull gemma3n:e4b
+  ollama pull gemma3:4b
   ollama serve   # stellt eine OpenAI-kompatible API unter http://localhost:11434/v1 bereit
   ```
 
@@ -101,29 +101,56 @@ liefert einen kontrollierten Fehler und `/health` meldet
 
 ### Mit Docker Compose
 
+Das Compose-File bringt bewusst **keinen eigenen Ollama-Container** mehr mit
+(frühere Version tat das) - es erwartet stattdessen einen bereits laufenden,
+lokalen Ollama-Server auf dem Host. Das vermeidet doppelt vorgehaltene
+Modelle/Container und Port-Konflikte, wenn auf demselben Rechner mehrere
+Projekte dasselbe lokale Modell nutzen sollen (siehe
+`AI_DEVELOPMENT_LOG.md`, Episode 5, Nachtrag 2):
+
 ```bash
 cp .env.example .env
 
-# Variante A: mit dem mitgelieferten Mock-KI-Server (kein Modell-Download nötig, nur Demo/Test):
+# einmalig: Ollama auf dem Host starten und Modell pullen (falls noch nicht vorhanden)
+docker run -d --name ollama-shared -p 11434:11434 -v ollama:/root/.ollama ollama/ollama
+docker exec ollama-shared ollama pull gemma3:4b
+
+# Variante A: mit dem echten lokalen Modell (Defaults in docker-compose.yml
+# passen bereits: http://host.docker.internal:11434/v1, gemma3:4b):
+docker compose up --build
+
+# Variante B: mit dem mitgelieferten Mock-KI-Server (kein Modell-Download nötig, nur Demo/Test):
 AI_BASE_URL=http://mock-ai:8100/v1 AI_MODEL=mock-model \
   docker compose --profile mock up --build
-
-# Variante B: mit echtem lokalem Modell über Ollama:
-AI_BASE_URL=http://ollama:11434/v1 AI_MODEL=gemma3n:e4b \
-  docker compose --profile real up --build
-# einmalig zusätzlich, in einem zweiten Terminal:
-docker compose exec ollama ollama pull gemma3n:e4b
 ```
 
 `docker compose up app` (ohne Profil) startet den Dienst auch ganz allein -
 degradiert (ohne KI-Antwortfunktion), aber lauffähig.
 
+> ⚠️ **Wichtige Stolperfalle bei eigener lokaler `.env`:** Falls im
+> Projektverzeichnis bereits eine `.env`-Datei für den *nativen* Lauf ohne
+> Docker existiert (typischerweise mit `AI_BASE_URL=http://localhost:11434/v1`
+> für den direkten Zugriff auf einen lokal installierten Ollama), lädt
+> `docker compose` diese `.env` automatisch mit - und "localhost" bedeutet
+> dann innerhalb des Containers den Container selbst, nicht den Host! Die
+> KI-Komponente ist dann scheinbar grundlos "nicht erreichbar", obwohl der
+> Container läuft, selbst wenn der Compose-Default eigentlich schon korrekt
+> auf `host.docker.internal` zeigt (die `.env` überschreibt diesen Default).
+> Deshalb im Zweifel `AI_BASE_URL`/`AI_MODEL` wie oben gezeigt explizit vor
+> dem Befehl voranstellen - genau dieser Fall ist beim echten Build-Test
+> aufgetreten, siehe `AI_DEVELOPMENT_LOG.md`, Episode 5 (Nachtrag).
+
 > **Hinweis zur Entstehung:** Dieses Projekt wurde in einem Cloud-Entwicklungs-
 > Workspace mit eingeschränktem Netzwerkzugriff entwickelt (kein Zugriff auf
 > Docker Hub/Ollama/Hugging Face, siehe `AI_DEVELOPMENT_LOG.md`, Episode 5).
-> Dockerfile/docker-compose.yml sind syntaktisch geprüft
-> (`docker compose config`), aber **nicht** in dieser Umgebung build-getestet
-> worden. Bitte vor der Abgabe einmal real ausführen und verifizieren.
+> Dockerfile/docker-compose.yml wurden auf einem echten Rechner **erfolgreich
+> build- und funktionsgetestet** (App-Container + echter Ollama-Server, echte
+> `/ask`-Anfrage gegen `gemma3:4b` erfolgreich gegründet beantwortet). Der
+> anfängliche Aufbau mit einem projekteigenen, gebündelten Ollama-Container im
+> Compose-File wurde danach bewusst zugunsten eines gemeinsam genutzten,
+> host-seitigen Ollama-Servers verworfen (Nachtrag 2 in Episode 5) - das
+> entspricht besser der Praxis, dieselbe lokale KI-Komponente über mehrere
+> Projekte hinweg zu teilen.
 
 ## Konfiguration
 
@@ -134,7 +161,7 @@ und `app/config.py`):
 |---|---|---|
 | `DATABASE_URL` | SQLAlchemy-Datenbank-URL | `sqlite:///./data/app.db` |
 | `AI_BASE_URL` | Basis-URL des OpenAI-kompatiblen Inference-Servers | `http://localhost:11434/v1` |
-| `AI_MODEL` | Modellname/-tag beim Inference-Server | `gemma3n:e4b` |
+| `AI_MODEL` | Modellname/-tag beim Inference-Server | `gemma3:4b` |
 | `AI_API_KEY` | API-Key (bei rein lokalem Betrieb meist irrelevant) | `not-needed-for-local-inference` |
 | `AI_TIMEOUT_SECONDS` | Timeout je Anfrage an das Modell | `20` |
 | `AI_MAX_RETRIES` | Zusätzliche Versuche bei 5xx-Antworten | `1` |
@@ -172,10 +199,52 @@ python -m scripts.generate_sample_data
 ```
 
 **Warum synthetisch statt echte Daten?** Der Cloud-Entwicklungs-Workspace
-hatte keinen Netzwerkzugriff auf GitHub-Rohdaten. Echte Daten lassen sich
-jederzeit **ohne Code-Änderung** einsetzen: `stations.csv`/`prices.csv` im
-selben Spaltenformat in `data/` ablegen (siehe Kommentar in
-`scripts/generate_sample_data.py`).
+hatte keinen Netzwerkzugriff auf GitHub-Rohdaten, und ein historisches
+Massen-Archiv echter Tankerkönig-Daten war zum Zeitpunkt der Entwicklung
+nirgends aktuell/frei zugänglich (siehe AI_DEVELOPMENT_LOG.md, Episode 9).
+Die synthetischen Preise liegen daher unterhalb des aktuellen realen
+Preisniveaus (~1.6-1.8 statt ~2.2 EUR/Liter) - intern konsistent für
+Forecasting/Grounding, aber nicht realitätsgetreu. Echte Daten lassen sich
+jederzeit **ohne Code-Änderung** einsetzen: entweder `stations.csv`/
+`prices.csv` im selben Spaltenformat in `data/` ablegen (siehe Kommentar in
+`scripts/generate_sample_data.py`), oder echte, wachsende Daten über die
+unten beschriebenen Sammel-Skripte hinzufügen.
+
+## Echte Daten sammeln (optional, vorbereitet)
+
+Zusätzlich zu den synthetischen Beispieldaten gibt es zwei Skripte, um echte,
+über die Zeit wachsende Preisdaten der öffentlichen Tankerkönig-API zu
+sammeln - unabhängig von den synthetischen `data/*.csv` (die für
+reproduzierbare Tests/Evaluation unverändert bleiben). Echte Stationen werden
+dafür als zusätzliche Datenbank-Einträge angelegt.
+
+**Voraussetzung:** ein kostenloser API-Key von
+[onboarding.tankerkoenig.de](https://onboarding.tankerkoenig.de). **Stand bei
+Abgabe:** die Registrierung war dort wegen Wartungsarbeiten des Anbieters
+nicht möglich - die beiden folgenden Skripte sind deshalb gegen die
+öffentlich dokumentierte API-Form geschrieben und mit `httpx.MockTransport`
+getestet, aber **nicht gegen die echte, laufende API verifiziert**. Details
+und Einordnung: `AI_DEVELOPMENT_LOG.md`, Episode 9.
+
+```bash
+# .env ergänzen: TANKERKOENIG_API_KEY=<dein-key>
+
+# 1. Einmalig: echte Tankstellen in der Nähe suchen und auswählen
+python -m scripts.discover_real_stations --lat 51.5136 --lng 7.4653 --radius 5
+python -m scripts.discover_real_stations --lat 51.5136 --lng 7.4653 --radius 5 \
+    --pick <uuid1>,<uuid2>,<uuid3> --write
+# .env ergänzen: TANKERKOENIG_STATION_UUIDS=<uuid1>,<uuid2>,<uuid3>
+
+# 2. Wiederkehrend (z.B. stündlich per cron/launchd): aktuelle Preise abrufen
+python -m scripts.collect_real_prices
+```
+
+Ein Cron-Eintrag für stündliches Sammeln:
+
+```
+0 * * * *  cd /pfad/zum/projekt && .venv/bin/python -m scripts.collect_real_prices >> /pfad/zum/projekt/collect.log 2>&1
+```
+
 
 ## Tests
 
@@ -218,12 +287,17 @@ destruktive oder sicherheitsrelevante Befehle vor Ausführung bestätigen.
 
 ## Bekannte Grenzen / offene Punkte
 
-- Dockerfile/docker-compose.yml sind syntaktisch geprüft, aber nicht in
-  dieser Umgebung build-getestet (fehlender Registry-Zugriff, s.o.) - vor
-  Abgabe einmal real ausführen.
-- Die KI-Evaluation wurde bislang gegen einen regelbasierten Mock-Server
-  durchgeführt (kein echtes Sprachmodell verfügbar) - vor Abgabe mit dem
-  echten lokalen Modell wiederholen (`evaluation/RESULTS.md`).
+- Dockerfile/docker-compose.yml wurden real gebaut und gestartet (nicht nur
+  syntaktisch geprüft) - siehe `AI_DEVELOPMENT_LOG.md`, Episode 5 (Nachtrag)
+  und Episode 8.
+- Die KI-Evaluation wurde final gegen das echte lokale Modell (`gemma3:4b`
+  via Ollama) ausgeführt, nicht nur gegen den Mock - siehe
+  `evaluation/RESULTS.md` und `AI_DEVELOPMENT_LOG.md`, Episode 7.
+- Die Sammel-Skripte für echte Tankerkönig-Daten
+  (`scripts/discover_real_stations.py`, `scripts/collect_real_prices.py`)
+  sind vorbereitet und unit-getestet, aber mangels verfügbarem API-Key
+  NICHT gegen die echte API verifiziert - siehe Abschnitt "Echte Daten
+  sammeln" und `AI_DEVELOPMENT_LOG.md`, Episode 9.
 - Die Vorhersage ist eine einfache, erklärbare statistische Schätzung
   (gleitender Durchschnitt + Saisonalität + linearer Trend), keine
   hochentwickelte Zeitreihenprognose - bewusste Design-Entscheidung zugunsten

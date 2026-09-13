@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # --- Lokale KI-Komponente (OpenAI-kompatible API, z.B. Ollama) ---
     ai_base_url: str = "http://localhost:11434/v1"
-    ai_model: str = "gemma3n:e4b"
+    ai_model: str = "gemma3:4b"
     ai_api_key: str = "not-needed-for-local-inference"
     ai_timeout_seconds: float = 20.0
     ai_max_retries: int = 1
@@ -29,6 +29,17 @@ class Settings(BaseSettings):
     # --- Forecasting ---
     forecast_horizon_hours: int = 24
     min_history_days_for_forecast: int = 7
+
+    # --- Echte Tankerkönig-Daten sammeln (optional, siehe scripts/collect_real_prices.py) ---
+    # Leer = Sammel-Skripte sind deaktiviert (Standard, da kostenpflichtige
+    # Registrierung bei Tankerkönig zum Zeitpunkt der Entwicklung wegen
+    # Wartungsarbeiten nicht möglich war - siehe AI_DEVELOPMENT_LOG.md,
+    # Episode 9). Sobald ein Key vorliegt, hier eintragen.
+    tankerkoenig_api_key: str = ""
+    # Komma-getrennte Liste echter Tankstellen-UUIDs (von Tankerkönig), deren
+    # Preise gesammelt werden sollen. Wird von
+    # scripts/discover_real_stations.py befüllt.
+    tankerkoenig_station_uuids: str = ""
 
 
 @lru_cache

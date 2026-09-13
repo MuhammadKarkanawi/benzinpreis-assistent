@@ -41,9 +41,17 @@ REFUSAL_MARKERS = [
     "kann ich nicht", "keine auskunft", "außerhalb", "nur zu kraftstoffpreisen",
     "nur für kraftstoffpreise", "dazu kann ich leider nichts sagen", "bin ich nicht zuständig",
     "kann ich dir nicht", "keine finanzberatung", "nicht mein themenbereich",
+    # Ergänzt nach der Evaluation mit dem echten Modell (gemma3:4b): das Modell
+    # lehnt thematisch fremde Fragen inhaltlich korrekt ab, aber mit anderen
+    # Formulierungen als im (regelbasierten) Mock erwartet - siehe
+    # AI_DEVELOPMENT_LOG.md Episode 7 (Fall c08, "Anlageberatung").
+    "anlageberatung", "ausschließlich kraftstoffpreise", "ausschließlich die kraftstoffpreise",
+    "beschränken sich ausschließlich",
 ]
 
 OVERCONFIDENT_MARKERS = ["100%", "garantiert", "sicher richtig", "auf jeden fall"]
+NEGATION_WINDOW_CHARS = 30
+NEGATION_WORDS = ["kein", "keine", "keinen", "keiner", "nicht", "ohne", "niemals"]
 
 
 def load_station_map() -> dict[str, str]:
@@ -69,8 +77,26 @@ def looks_like_refusal(answer: str) -> bool:
 
 
 def looks_overconfident(answer: str) -> bool:
+    """Erkennt unangemessen selbstsichere Formulierungen ("100%",
+    "garantiert", ...) - aber NICHT, wenn die Formulierung direkt verneint
+    wird (z.B. "ich kann keine 100%ige Garantie geben"). Die ursprüngliche
+    Version prüfte nur auf das reine Vorkommen der Marker-Wörter und stufte
+    dadurch Antworten, die Unsicherheit gerade korrekt und ausdrücklich
+    einräumen, fälschlich als "überconfident" ein - gefunden bei der
+    Evaluation mit dem echten Modell (gemma3:4b), siehe
+    AI_DEVELOPMENT_LOG.md Episode 7."""
     a = answer.lower()
-    return any(marker in a for marker in OVERCONFIDENT_MARKERS)
+    for marker in OVERCONFIDENT_MARKERS:
+        start = 0
+        while True:
+            idx = a.find(marker, start)
+            if idx == -1:
+                break
+            window = a[max(0, idx - NEGATION_WINDOW_CHARS):idx]
+            if not any(neg in window for neg in NEGATION_WORDS):
+                return True
+            start = idx + len(marker)
+    return False
 
 
 async def run() -> dict:
@@ -86,6 +112,21 @@ async def run() -> dict:
         seed_from_csv(session, DATA_DIR)
 
     ai_client = AIClient(settings)
+
+    # Warm-up: ein echter lokaler Inference-Server (z.B. Ollama) muss das
+    # Modell beim allerersten Aufruf erst in den Arbeitsspeicher laden - das
+    # kann laenger dauern als der konfigurierte Timeout und liess die ersten
+    # Faelle bei einem echten Modelllauf fehlschlagen (Timeout trotz
+    # anschliessend durchgehend schneller Antworten). Ein einmaliger,
+    # nicht gemessener Aufruf vor der eigentlichen Auswertung vermeidet, dass
+    # dieser reine Kaltstart-Effekt die gemessene Fehlerrate/Latenz verzerrt.
+    # Siehe AI_DEVELOPMENT_LOG.md Episode 7.
+    try:
+        await ai_client.chat([{"role": "user", "content": "Hallo"}])
+        print("[warm-up] KI-Backend erfolgreich vorgewaermt.")
+    except Exception as exc:  # noqa: BLE001 - Warm-up ist best-effort
+        print(f"[warm-up] Vorwaermen fehlgeschlagen (wird ignoriert, Lauf startet trotzdem): {exc}")
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     details_path = RESULTS_DIR / "details.jsonl"
 

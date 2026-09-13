@@ -1,39 +1,67 @@
 # Nutzung:
 #
-#   Ohne echtes lokales Sprachmodell (Demo/Entwicklung, Mock-KI-Server):
+#   Standard: gegen einen bereits laufenden, lokalen Ollama-Server auf dem
+#   Host (z.B. ein einzelner, projektübergreifend genutzter Ollama-Container -
+#   Modell vorher einmalig pullen, z.B. "ollama pull gemma3:4b"):
+#     docker compose up --build
+#   Der Ollama-Server-Endpunkt (AI_BASE_URL) ist bewusst fest auf
+#   http://host.docker.internal:11434/v1 verdrahtet (nicht per Env-Var
+#   überschreibbar) - siehe Kommentar bei der "environment:"-Sektion unten,
+#   Grund: Episode 5/Nachtrag 1 und Episode 8 in AI_DEVELOPMENT_LOG.md.
+#   AI_MODEL ist weiterhin überschreibbar, z.B. für ein anderes Modell:
+#     AI_MODEL=ein-anderes-modell docker compose up --build
+#   Am einfachsten dauerhaft in einer lokalen ".env"-Datei (siehe .env.example) -
+#   betrifft dann aber nur AI_MODEL/AI_API_KEY/Timeouts, nicht AI_BASE_URL.
+#
+#   Ohne echtes lokales Sprachmodell (Demo/Entwicklung, mitgelieferter
+#   Mock-KI-Server):
 #     AI_BASE_URL=http://mock-ai:8100/v1 AI_MODEL=mock-model \
 #       docker compose --profile mock up --build
 #
-#   Mit echtem lokalem Sprachmodell über Ollama (siehe README für Modell-Pull):
-#     AI_BASE_URL=http://ollama:11434/v1 AI_MODEL=gemma3n:e4b \
-#       docker compose --profile real up --build
-#     (einmalig zusätzlich: docker compose exec ollama ollama pull gemma3n:e4b)
+# Der "app"-Dienst startet auch unabhängig/allein (z.B. "docker compose up
+# app"): die nicht-KI-Funktionen (Preisverlauf, Vorhersage,
+# Tankzeit-Empfehlung) bleiben dann verfügbar, nur die KI-Frage-Funktion
+# meldet über /health, dass das KI-Backend nicht erreichbar ist.
 #
-# Am einfachsten: die gewünschten AI_BASE_URL/AI_MODEL-Werte in eine lokale
-# ".env"-Datei schreiben (siehe .env.example) statt sie jedes Mal voranzustellen.
-#
-# In beiden Fällen startet der "app"-Dienst auch unabhängig/allein
-# (z.B. "docker compose up app"): die nicht-KI-Funktionen (Preisverlauf,
-# Vorhersage, Tankzeit-Empfehlung) bleiben dann verfügbar, nur die
-# KI-Frage-Funktion meldet über /health, dass das KI-Backend nicht
-# erreichbar ist.
+# Hinweis: Dieses Compose-File bringt bewusst KEINEN eigenen Ollama-Service
+# mehr mit (früher: Service "ollama", Profil "real") - stattdessen wird ein
+# bereits laufender, lokaler Ollama-Server auf dem Host erwartet. Das
+# vermeidet doppelt vorgehaltene Modelle/Container und Port-Konflikte, wenn
+# auf demselben Rechner mehrere Projekte dasselbe lokale Modell nutzen (siehe
+# AI_DEVELOPMENT_LOG.md, Episode 5, Nachtrag 2). Ollama muss dafür VOR dem
+# Start dieses Compose-Files bereits laufen, z.B.:
+#   docker run -d --name ollama-shared -p 11434:11434 -v ollama:/root/.ollama ollama/ollama
+#   docker exec ollama-shared ollama pull gemma3:4b
 
 services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "8002:8000"
     environment:
       DATABASE_URL: sqlite:///./data/app.db
-      # Kein Default hier bewusst: der richtige Wert hängt vom gewählten
-      # Profil ab (mock-ai vs. ollama) - siehe Hinweise oben und README.
-      AI_BASE_URL: ${AI_BASE_URL:?bitte AI_BASE_URL setzen, siehe Kommentar oben}
-      AI_MODEL: ${AI_MODEL:?bitte AI_MODEL setzen, siehe Kommentar oben}
+      # Fest verdrahtet (nicht ueber .env/${...} konfigurierbar): innerhalb
+      # des Containers bedeutet "localhost" den Container selbst, nicht den
+      # Host - "host.docker.internal" ist die von Docker Desktop
+      # (macOS/Windows) bereitgestellte Adresse, ueber die ein Container den
+      # Host erreicht. Die projektweite ".env" wird von docker-compose
+      # automatisch zur Variablensubstitution eingelesen; waere dieser Wert
+      # ueber ${AI_BASE_URL:-...} konfigurierbar, wuerde ein fuer den NATIVEN
+      # Lauf gedachter ".env"-Wert (z.B. "http://127.0.0.1:11434/v1")
+      # versehentlich in den Container durchschlagen und dort ins Leere
+      # zeigen (genau das ist einmal passiert - siehe AI_DEVELOPMENT_LOG.md,
+      # Episode 5 Nachtrag 1 und Episode 8).
+      AI_BASE_URL: http://host.docker.internal:11434/v1
+      AI_MODEL: ${AI_MODEL:-gemma3:4b}
       AI_API_KEY: ${AI_API_KEY:-not-needed-for-local-inference}
       AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-20}
       AI_MAX_RETRIES: ${AI_MAX_RETRIES:-1}
     volumes:
       - ./data:/app/data
+    extra_hosts:
+      # Nötig, damit "host.docker.internal" unter Linux auflösbar ist; unter
+      # Docker Desktop (macOS/Windows) ein No-op, da dort schon vorhanden.
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   mock-ai:
@@ -43,15 +71,3 @@ services:
       - "8100:8100"
     profiles: ["mock"]
     restart: unless-stopped
-
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    profiles: ["real"]
-    restart: unless-stopped
-
-volumes:
-  ollama-models:
