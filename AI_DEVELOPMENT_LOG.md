@@ -397,6 +397,59 @@ Entwicklungssitzung, keine vollständige Mitschrift.
   Kompromiss, der auf eine ausserhalb der eigenen Kontrolle liegende
   externe Bedingung (Wiederoeffnung der Registrierung) wartet.
 
+
+## Episode 10: Erste echte Verifikation der Tankerkoenig-API - zu knapper Timeout und eine "geschlossene" Station mit Null-Preisen gefunden
+
+- **Kontext:** Die Tankerkoenig-Registrierung des Studierenden wurde
+  freigeschaltet, ein echter API-Key lag vor. `discover_real_stations.py
+  --write` wurde damit zum ersten Mal erfolgreich gegen die echte,
+  laufende API ausgefuehrt (3 reale Stationen in Dortmund gefunden und in
+  der DB angelegt), `TANKERKOENIG_STATION_UUIDS` gesetzt und
+  `collect_real_prices.py` per Cron stuendlich eingerichtet.
+
+- **Ergebnis - erste echte Verifikation erfolgreich:** Die reale API lieferte
+  korrekt geparste Preise (~2,24-2,42 EUR/Liter) - endlich das tatsaechliche
+  Marktniveau, statt der synthetischen ~1,6-1,8 EUR/Liter (siehe Episode 9).
+  Damit ist das in `tankerkoenig_client.py` bislang nur gegen die
+  *dokumentierte* API-Form geschriebene Feldschema (`id`, `name`, `brand`,
+  `e5`, `e10`, `diesel`, ...) zum ersten Mal live bestaetigt.
+
+- **Problem 1 - Timeout zu knapp:** Ein Sammel-Lauf schlug mit
+  "Zeitueberschreitung beim Aufruf der Tankerkoenig-API" fehl
+  (`collect.log`). Ursachenanalyse: `TankerkoenigClient` hatte - anders als
+  `AIClient` mit `AI_TIMEOUT_SECONDS` - einen fest codierten, nicht
+  konfigurierbaren 10s-Timeout; unter realen Netzwerkbedingungen reichte das
+  nicht immer. **Fix:** neue Einstellung
+  `Settings.tankerkoenig_timeout_seconds` (Standard 15s, ueber
+  `TANKERKOENIG_TIMEOUT_SECONDS` konfigurierbar), analog zu
+  `ai_timeout_seconds`; Client-Default ebenfalls auf 15.0 angehoben.
+
+- **Problem 2 - Station mit Null-Preisen trotz "normalem" Status:** Eine der
+  drei echten Stationen ("star Tankstelle") lieferte bei mehreren Laeufen
+  einen Datensatz mit `e5 = e10 = diesel = None`, obwohl der API-Status
+  *nicht* `"no prices"` war (vermutlich eine zeitweise geschlossene
+  Tankstelle). Der bisherige Code in `collect_real_prices.py` prophylaktisch
+  nur auf `status == "no prices"` und haette sonst einen bedeutungslosen
+  Nur-Null-Datensatz in der Preishistorie gespeichert. **Fix:** zusaetzlich
+  ueberspringen, wenn alle drei Kraftstoffwerte `None` sind, unabhaengig vom
+  Status-String.
+
+- **Verifikation:** 2 neue Regressionstests in `tests/test_collect_real_prices.py`
+  (Alle-Null-Fall trotz abweichendem Status; konfigurierter Timeout wird
+  tatsaechlich an den Client durchgereicht) - komplette Suite (46 Tests)
+  weiterhin gruen, sowohl im Cloud-Workspace als auch nach Uebertragung auf
+  den echten Rechner.
+
+- **Beobachtung/Risiko:** Erst der reale Betrieb gegen eine echte,
+  unberechenbare externe API deckte zwei Dinge auf, die weder
+  Mock-Transport-Tests noch die urspruengliche defensive
+  `.get(...)`-Programmierung automatisch verhindern konnten: ein zu
+  optimistisch bemessener Timeout und ein echter Datenrandfall (Station ohne
+  Preis trotz unauffaelligem Status). Dasselbe Muster wie schon bei der
+  KI-Komponente in Episode 7: synthetische/Mock-Tests bestaetigen die
+  Kernlogik, aber reale externe Dienste liefern immer wieder Ueberraschungen,
+  die erst im echten Betrieb sichtbar werden.
+
 ---
 
 ## Zusammenfassung: akzeptiert / modifiziert / abgelehnt
@@ -412,3 +465,4 @@ Entwicklungssitzung, keine vollständige Mitschrift.
 | 7 | Warm-up-Aufruf + Groundedness-/Evaluations-Heuristik-Fixes | akzeptiert (drei reale, mit dem echten Modell gefundene Probleme behoben und verifiziert) |
 | 8 | Fester Port pro Projekt + venv-Neuanlage (Python 3.12) | akzeptiert (Python-3.14-Inkompatibilitaet behoben; Port-Konflikt zwischen Docker-Container und nativem Prozess als wahre Ursache eines zunaechst als Netzwerk-/uvloop-Bug vermuteten Problems identifiziert) |
 | 9 | Docker-Endverifikation (`.env`-Override-Fix) + Sammel-Infrastruktur fuer echte Tankerkoenig-Daten | akzeptiert (zweiter, unabhaengiger `.env`-Override-Bug in `docker-compose.yml` behoben; Client/Skripte/Tests fuer echte Preisdaten vorbereitet, mangels Registrierungs-Freigabe noch nicht live verifiziert) |
+| 10 | Live-Verifikation Tankerkoenig-API (Timeout- und Null-Preis-Fix) | akzeptiert (Client erstmals erfolgreich gegen die echte API verifiziert; zu knapper Timeout und "geschlossene Station"-Randfall gefunden und behoben, 2 neue Tests) |

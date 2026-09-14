@@ -4,21 +4,21 @@ Dünner Client für die öffentliche Tankerkönig-API
 aufgebaut (injizierbarer httpx-Transport für Tests, explizite
 Fehlerklassen).
 
-WICHTIGER HINWEIS ZUM STATUS DIESES MODULS:
-Zum Zeitpunkt der Entwicklung war die Registrierung für einen neuen
-Tankerkönig-API-Key über die offizielle Seite (onboarding.tankerkoenig.de)
-wegen Wartungsarbeiten des Anbieters nicht möglich - siehe
-AI_DEVELOPMENT_LOG.md, Episode 9. Dieser Client wurde deshalb ausschließlich
-gegen die öffentlich dokumentierte API-Form geschrieben und mit
-`httpx.MockTransport` getestet, aber NICHT gegen die echte, laufende API
-verifiziert. Vor dem produktiven Einsatz (sobald ein Key vorliegt) sollte
-einmal ein echter Aufruf gegen `list.php`/`prices.php` gemacht und die
-tatsächlichen JSON-Feldnamen mit den unten verwendeten (`name`, `brand`,
-`street`, `houseNumber`, `postCode`, `place`, `lat`, `lng`, `diesel`, `e5`,
-`e10`) abgeglichen werden - die Parser-Funktionen unten sind bewusst
-defensiv geschrieben (`.get(...)` mit Fallbacks), damit ein einzelnes
-abweichendes Feld nicht den gesamten Lauf zum Absturz bringt, aber eine
-echte Verifikation ersetzt das nicht.
+STATUS DIESES MODULS:
+Zum Zeitpunkt der ursprünglichen Entwicklung war die Registrierung für einen
+neuen Tankerkönig-API-Key über die offizielle Seite
+(onboarding.tankerkoenig.de) wegen Wartungsarbeiten des Anbieters nicht
+möglich - der Client wurde deshalb zunächst ausschließlich gegen die
+öffentlich dokumentierte API-Form geschrieben und nur mit
+`httpx.MockTransport` getestet (siehe AI_DEVELOPMENT_LOG.md, Episode 9).
+Inzwischen liegt ein echter API-Key vor und der Client wurde erfolgreich
+gegen die echte, laufende API verifiziert (reale Preise, korrektes Schema -
+siehe Episode 10). Dabei aufgefallen und behoben: ein zu knapper, fest
+codierter Timeout (führte zu einem echten Timeout im Betrieb - jetzt über
+`Settings.tankerkoenig_timeout_seconds` konfigurierbar) sowie Stationen, die
+mit einem Status ungleich "no prices" trotzdem keine Preise liefern (z.B.
+vorübergehend geschlossen) - wird von `scripts/collect_real_prices.py`
+inzwischen konsistent übersprungen.
 
 API-Endpunkte (Basis-URL: https://creativecommons.tankerkoenig.de/json/):
 - list.php   : Tankstellen im Umkreis (lat, lng, rad, type, sort, apikey)
@@ -44,7 +44,7 @@ class TankerkoenigInvalidResponseError(TankerkoenigError):
 
 
 class TankerkoenigClient:
-    def __init__(self, api_key: str, transport: httpx.HTTPTransport | None = None, timeout: float = 10.0):
+    def __init__(self, api_key: str, transport: httpx.HTTPTransport | None = None, timeout: float = 15.0):
         self._api_key = api_key
         self._transport = transport
         self._timeout = timeout
@@ -105,8 +105,8 @@ class TankerkoenigClient:
     @staticmethod
     def _normalize_station(raw: dict) -> dict:
         """Bildet ein rohes Tankerkönig-Stations-Dict auf unser
-        app.models.Station-Schema ab. Feldnamen gemäß öffentlicher
-        Dokumentation - siehe Modul-Docstring zur fehlenden Live-Verifikation."""
+        app.models.Station-Schema ab. Feldnamen inzwischen live gegen die
+        echte API verifiziert (siehe Modul-Docstring, Episode 10)."""
         street = raw.get("street", "")
         house_number = raw.get("houseNumber", "")
         full_street = f"{street} {house_number}".strip()

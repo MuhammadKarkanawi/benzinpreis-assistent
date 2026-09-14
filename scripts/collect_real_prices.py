@@ -20,8 +20,11 @@ einer klaren Meldung - so kann es bereits in einen Scheduler eingetragen
 werden, bevor die Tankerkönig-Registrierung abgeschlossen ist, ohne
 Fehler-Alarme auszulösen.
 
-Status: Dieses Skript wurde mangels verfügbarem API-Key NICHT gegen die
-echte Tankerkönig-API verifiziert - siehe AI_DEVELOPMENT_LOG.md Episode 9.
+Status: Inzwischen erfolgreich gegen die echte Tankerkönig-API verifiziert
+(siehe AI_DEVELOPMENT_LOG.md, Episode 10) - u.a. dabei gefunden und behoben:
+ein zu knapper API-Timeout und Stationen, die trotz Status ungleich
+"no prices" keine verwertbaren Preise liefern (z.B. vorübergehend
+geschlossen).
 """
 from __future__ import annotations
 
@@ -68,7 +71,9 @@ def collect() -> dict:
         )
         return {"skipped": True, "reason": "keine Stationen konfiguriert"}
 
-    client = TankerkoenigClient(api_key=settings.tankerkoenig_api_key)
+    client = TankerkoenigClient(
+        api_key=settings.tankerkoenig_api_key, timeout=settings.tankerkoenig_timeout_seconds
+    )
     init_db()
 
     all_prices: dict[str, dict] = {}
@@ -84,12 +89,19 @@ def collect() -> dict:
     with Session(engine) as session:
         for station_uuid in station_uuids:
             raw = all_prices.get(station_uuid)
-            if raw is None or raw.get("status") == "no prices":
+            new_values = {ft: raw.get(ft) for ft in FUEL_TYPES} if raw is not None else {ft: None for ft in FUEL_TYPES}
+            # Nicht nur auf status == "no prices" prüfen: die echte API liefert
+            # auch mit einem anderen Status (z.B. vorübergehend geschlossene
+            # Station) manchmal keinen einzigen verwertbaren Preis - das war
+            # beim ersten echten Sammel-Lauf tatsächlich der Fall (siehe
+            # AI_DEVELOPMENT_LOG.md, Episode 10). In diesem Fall ebenfalls
+            # überspringen, statt einen Datensatz aus lauter Nullwerten zu
+            # speichern.
+            if raw is None or raw.get("status") == "no prices" or all(v is None for v in new_values.values()):
                 print(f"  {station_uuid}: keine Preisdaten in der Antwort, übersprungen.")
                 continue
 
             previous = _latest_prices(session, station_uuid)
-            new_values = {ft: raw.get(ft) for ft in FUEL_TYPES}
             changes = {
                 f"{ft}_change": int(new_values[ft] is not None and new_values[ft] != previous[ft])
                 for ft in FUEL_TYPES

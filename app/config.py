@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Preise gesammelt werden sollen. Wird von
     # scripts/discover_real_stations.py befüllt.
     tankerkoenig_station_uuids: str = ""
+    # Timeout für Aufrufe der Tankerkönig-API in Sekunden. Der ursprüngliche,
+    # fest codierte 10s-Timeout im Client war beim ersten echten Sammel-Lauf
+    # tatsächlich einmal zu knapp (siehe AI_DEVELOPMENT_LOG.md, Episode 10) -
+    # deshalb konfigurierbar, analog zu ai_timeout_seconds.
+    tankerkoenig_timeout_seconds: float = 15.0
 
 
 @lru_cache

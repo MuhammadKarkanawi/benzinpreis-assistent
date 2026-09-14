@@ -204,11 +204,13 @@ Massen-Archiv echter Tankerkönig-Daten war zum Zeitpunkt der Entwicklung
 nirgends aktuell/frei zugänglich (siehe AI_DEVELOPMENT_LOG.md, Episode 9).
 Die synthetischen Preise liegen daher unterhalb des aktuellen realen
 Preisniveaus (~1.6-1.8 statt ~2.2 EUR/Liter) - intern konsistent für
-Forecasting/Grounding, aber nicht realitätsgetreu. Echte Daten lassen sich
-jederzeit **ohne Code-Änderung** einsetzen: entweder `stations.csv`/
+Forecasting/Grounding, aber nicht realitätsgetreu. Sie bleiben unverändert
+als reproduzierbare Basis für Tests/Evaluation bestehen. Echte Daten lassen
+sich zusätzlich **ohne Code-Änderung** einsetzen: entweder `stations.csv`/
 `prices.csv` im selben Spaltenformat in `data/` ablegen (siehe Kommentar in
 `scripts/generate_sample_data.py`), oder echte, wachsende Daten über die
-unten beschriebenen Sammel-Skripte hinzufügen.
+unten beschriebenen Sammel-Skripte hinzufügen - letzteres ist inzwischen
+produktiv im Einsatz (drei reale Stationen, siehe unten).
 
 ## Echte Daten sammeln (optional, vorbereitet)
 
@@ -219,12 +221,17 @@ reproduzierbare Tests/Evaluation unverändert bleiben). Echte Stationen werden
 dafür als zusätzliche Datenbank-Einträge angelegt.
 
 **Voraussetzung:** ein kostenloser API-Key von
-[onboarding.tankerkoenig.de](https://onboarding.tankerkoenig.de). **Stand bei
-Abgabe:** die Registrierung war dort wegen Wartungsarbeiten des Anbieters
-nicht möglich - die beiden folgenden Skripte sind deshalb gegen die
-öffentlich dokumentierte API-Form geschrieben und mit `httpx.MockTransport`
-getestet, aber **nicht gegen die echte, laufende API verifiziert**. Details
-und Einordnung: `AI_DEVELOPMENT_LOG.md`, Episode 9.
+[onboarding.tankerkoenig.de](https://onboarding.tankerkoenig.de) (die
+Registrierung war während der Entwicklung zunächst wegen Wartungsarbeiten
+des Anbieters gesperrt, siehe `AI_DEVELOPMENT_LOG.md`, Episode 9). Inzwischen
+liegt ein echter Key vor, und die beiden Skripte wurden erfolgreich gegen die
+echte, laufende API verifiziert (reale Stationen gefunden, reale Preise auf
+dem tatsächlichen Marktniveau gespeichert). Dabei gefunden und behoben: ein
+zu knapper, jetzt über `TANKERKOENIG_TIMEOUT_SECONDS` konfigurierbarer
+Timeout, sowie Stationen, die trotz unauffälligem Status keine Preise
+liefern (z.B. vorübergehend geschlossen) - werden jetzt korrekt
+übersprungen statt als Nur-Null-Datensatz gespeichert. Details:
+`AI_DEVELOPMENT_LOG.md`, Episode 10.
 
 ```bash
 # .env ergänzen: TANKERKOENIG_API_KEY=<dein-key>
@@ -295,9 +302,10 @@ destruktive oder sicherheitsrelevante Befehle vor Ausführung bestätigen.
   `evaluation/RESULTS.md` und `AI_DEVELOPMENT_LOG.md`, Episode 7.
 - Die Sammel-Skripte für echte Tankerkönig-Daten
   (`scripts/discover_real_stations.py`, `scripts/collect_real_prices.py`)
-  sind vorbereitet und unit-getestet, aber mangels verfügbarem API-Key
-  NICHT gegen die echte API verifiziert - siehe Abschnitt "Echte Daten
-  sammeln" und `AI_DEVELOPMENT_LOG.md`, Episode 9.
+  sind inzwischen erfolgreich gegen die echte API verifiziert (siehe
+  Abschnitt "Echte Daten sammeln" und `AI_DEVELOPMENT_LOG.md`, Episode 10) -
+  drei reale Stationen sind angelegt, ein stündlicher Cron-Job sammelt
+  laufend echte Preise.
 - Die Vorhersage ist eine einfache, erklärbare statistische Schätzung
   (gleitender Durchschnitt + Saisonalität + linearer Trend), keine
   hochentwickelte Zeitreihenprognose - bewusste Design-Entscheidung zugunsten

@@ -36,7 +36,7 @@ def test_collect_inserts_price_record_and_marks_first_value_as_change(monkeypatc
     monkeypatch.setattr(collect_real_prices, "init_db", lambda: None)
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, timeout=None):
             pass
 
         def current_prices(self, ids):
@@ -66,7 +66,7 @@ def test_collect_marks_unchanged_price_as_no_change_on_second_run(monkeypatch):
     same_prices = {"real-uuid-1": {"status": "open", "e5": 1.799, "e10": 1.739, "diesel": 1.699}}
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, timeout=None):
             pass
 
         def current_prices(self, ids):
@@ -93,7 +93,7 @@ def test_collect_skips_station_reported_as_no_prices(monkeypatch):
     monkeypatch.setattr(collect_real_prices, "init_db", lambda: None)
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, timeout=None):
             pass
 
         def current_prices(self, ids):
@@ -107,3 +107,53 @@ def test_collect_skips_station_reported_as_no_prices(monkeypatch):
     with Session(engine) as session:
         records = session.exec(select(PriceRecord)).all()
     assert len(records) == 0
+
+
+def test_collect_skips_station_with_all_null_prices_even_with_other_status(monkeypatch):
+    """Regression: die echte API liefert manchmal (z.B. vorübergehend
+    geschlossene Station) einen Status ungleich "no prices", aber trotzdem
+    keinen einzigen verwertbaren Preis - siehe AI_DEVELOPMENT_LOG.md,
+    Episode 10. Das darf keinen Datensatz aus lauter Nullwerten erzeugen."""
+    engine = _fresh_engine()
+    monkeypatch.setattr(collect_real_prices, "engine", engine)
+    monkeypatch.setattr(collect_real_prices, "get_settings", lambda: make_settings())
+    monkeypatch.setattr(collect_real_prices, "init_db", lambda: None)
+
+    class FakeClient:
+        def __init__(self, api_key, timeout=None):
+            pass
+
+        def current_prices(self, ids):
+            return {"real-uuid-1": {"status": "closed", "e5": None, "e10": None, "diesel": None}}
+
+    monkeypatch.setattr(collect_real_prices, "TankerkoenigClient", FakeClient)
+
+    result = collect_real_prices.collect()
+    assert result["n_inserted"] == 0
+
+    with Session(engine) as session:
+        records = session.exec(select(PriceRecord)).all()
+    assert len(records) == 0
+
+
+def test_collect_passes_configured_timeout_to_client(monkeypatch):
+    engine = _fresh_engine()
+    monkeypatch.setattr(collect_real_prices, "engine", engine)
+    monkeypatch.setattr(
+        collect_real_prices, "get_settings", lambda: make_settings(tankerkoenig_timeout_seconds=7.5)
+    )
+    monkeypatch.setattr(collect_real_prices, "init_db", lambda: None)
+
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, api_key, timeout=None):
+            seen["timeout"] = timeout
+
+        def current_prices(self, ids):
+            return {}
+
+    monkeypatch.setattr(collect_real_prices, "TankerkoenigClient", FakeClient)
+
+    collect_real_prices.collect()
+    assert seen["timeout"] == 7.5

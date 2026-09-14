@@ -13,3 +13,6 @@ evaluation/results/*.json
 
 # IDE-Projektdateien (PyCharm) - lokal, nicht Teil der Abgabe
 .idea/
+
+# Laufzeit-Logs (z.B. Cron-Ausgabe von collect_real_prices.py)
+*.log
