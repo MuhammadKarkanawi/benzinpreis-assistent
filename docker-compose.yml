@@ -33,6 +33,7 @@
 #   docker run -d --name ollama-shared -p 11434:11434 -v ollama:/root/.ollama ollama/ollama
 #   docker exec ollama-shared ollama pull gemma3:4b
 
+
 services:
   app:
     build: .
