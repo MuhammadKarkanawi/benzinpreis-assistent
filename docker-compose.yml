@@ -72,3 +72,4 @@ services:
       - "8100:8100"
     profiles: ["mock"]
     restart: unless-stopped
+
