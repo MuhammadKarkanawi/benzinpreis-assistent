@@ -73,6 +73,7 @@
     <div>
       <div class="panel">
         <label>Preisverlauf (letzte 14 Tage)</label>
+        <div id="currentPriceBox" class="stat" style="border-bottom:none; margin-bottom:4px;">–</div>
         <canvas id="chart"></canvas>
       </div>
 
@@ -164,6 +165,24 @@ function drawChart(points) {
 async function loadPrices() {
   const data = await fetchJSON(`${API}/prices/${currentStation()}?fuel_type=${currentFuel()}&days=14`);
   drawChart(data.points);
+  renderCurrentPrice(data.points);
+}
+
+// Zeigt den aktuellen (letzten) Preis direkt aus der Preishistorie an -
+// unabhaengig davon, ob genug Historie fuer eine Vorhersage vorliegt
+// (die /forecast-Route verlangt mind. MIN_HISTORY_DAYS_FOR_FORECAST Tage,
+// der reine Preisverlauf nicht). So ist der aktuelle Preis auch fuer eine
+// frisch hinzugefuegte echte Tankstelle sofort sichtbar, nicht erst nach
+// einer Woche Sammel-Historie.
+function renderCurrentPrice(points) {
+  const box = document.getElementById('currentPriceBox');
+  if (!points.length) {
+    box.innerHTML = `<span>Aktueller Preis</span><span>keine Daten</span>`;
+    return;
+  }
+  const latest = points[points.length - 1];
+  const ts = new Date(latest.timestamp).toLocaleString('de-DE');
+  box.innerHTML = `<span>Aktueller Preis (Stand ${ts})</span><b>${latest.price.toFixed(3)} €</b>`;
 }
 
 async function loadForecast() {
@@ -172,7 +191,6 @@ async function loadForecast() {
   try {
     const f = await fetchJSON(`${API}/forecast/${currentStation()}?fuel_type=${currentFuel()}&horizon_hours=24`);
     box.innerHTML = `
-      <div class="stat"><span>Aktueller Preis</span><b>${f.current_price?.toFixed(3)} €</b></div>
       <div class="stat"><span>Vorhersage (24h)</span><b>${f.predicted_price.toFixed(3)} €</b></div>
       <div class="stat"><span>Richtung</span><span class="badge ${f.predicted_direction}">${f.predicted_direction}</span></div>
       <div class="stat"><span>Konfidenz (heuristisch)</span><b>${f.confidence}</b></div>
