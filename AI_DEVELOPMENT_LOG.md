@@ -452,6 +452,61 @@ Entwicklungssitzung, keine vollständige Mitschrift.
 
 ---
 
+## Episode 11: Abgleich gegen die tatsächliche Aufgabenstellung - drei Lücken gefunden (eine davon im Code, nicht nur in der Doku)
+
+- **Kontext:** Der Studierende hatte bislang nur indirekt (über die im
+  README verstreuten "Anforderung ..."-Verweise) geprüft, ob das Projekt die
+  Aufgabenstellung erfüllt. Nach Zusendung des offiziellen Aufgabenblatts
+  ("AISE Project: Building AI-Enabled Software with AI Agents", 12 Seiten,
+  20 Mindestkriterien) wurde der Agent gebeten, systematisch gegen den
+  tatsächlichen Text zu prüfen statt gegen die eigene Selbstauskunft des
+  Projekts.
+- **Vorgehen:** Jedes der 20 Mindestkriterien einzeln gegen den Code (nicht
+  nur gegen README/Log) verifiziert, u.a. durch Lesen von
+  `app/ai/client.py`, `app/routers/{stations,prices,forecast,ask}.py` und
+  `app/db.py` sowie gezielte Greps nach "Szenario"/"Datenschutz"/"privacy"
+  in der vorhandenen Dokumentation.
+- **Drei reale Lücken gefunden:**
+  1. **Fehlendes Deliverable** (Seite 10 der Aufgabenstellung): "a short
+     problem statement and two to four core user scenarios" existierte
+     nirgends als eigener Abschnitt - nur die Ein-Satz-Kurzbeschreibung im
+     README.
+  2. **Kriterium 19 ("Responsible design")** nicht dokumentiert: keine
+     explizite Behandlung von Datenschutz, Sicherheitsimplikationen und
+     Missbrauchspotenzial, obwohl explizit gefordert.
+  3. **Kriterium 10 ("Failure handling"), Teillücke im Code:** vier der
+     fünf geforderten Fehlerfälle (nicht erreichbar, Timeout, ungültige
+     Modellausgabe, nicht verarbeitbare Eingabe) waren bereits sauber
+     behandelt - der fünfte Fall ("persisted data cannot be read or
+     written") wurde nur im `/health`-Check abgefangen
+     (`except Exception: db_ok = False`), nicht aber in den eigentlichen
+     Daten-Endpunkten. Ein echter DB-Fehler (z.B. gesperrte/beschädigte
+     SQLite-Datei) hätte dort als unbehandelte 500-Exception mit
+     Stacktrace durchgeschlagen.
+- **Vorschlag des Agenten und Umsetzung:** (a) neuer Abschnitt
+  "Problemstellung & Nutzerszenarien" im README mit vier Szenarien; (b)
+  neuer Abschnitt "Verantwortungsvolles Design" im README (Datenschutz,
+  Sicherheit, Missbrauchspotenzial, Kennzeichnung KI-generierter
+  Ergebnisse); (c) zentraler `@app.exception_handler(SQLAlchemyError)` in
+  `app/main.py`, der jeden DB-Zugriffsfehler über alle Endpunkte hinweg
+  einheitlich als kontrollierte 503-Antwort statt als Absturz behandelt -
+  bewusst als ein einziger Handler statt Wiederholung in jedem Router
+  (DRY).
+- **Verifikation:** Neuer Regressionstest
+  `test_database_failure_returns_503_not_crash` in `tests/test_api.py`
+  (simuliert eine Session, deren `.exec()` `sqlalchemy.exc.OperationalError`
+  wirft, ohne eine echte kaputte Datei anlegen zu müssen) - alle 47 Tests
+  grün (46 vorher + dieser neue).
+- **Beobachtung/Risiko:** Alle drei Lücken wurden erst beim Abgleich gegen
+  den *tatsächlichen* Text der Aufgabenstellung sichtbar, nicht beim
+  Abgleich gegen die eigene Projektdokumentation - ein Beleg dafür, dass
+  ein Projekt sich selbst leicht für vollständiger halten kann, als es
+  gegenüber der externen Vorgabe tatsächlich ist. Insbesondere Punkt 3 war
+  ein reiner Code-Fund, der bei rein dokumentationsbasierter Prüfung nicht
+  aufgefallen wäre.
+
+---
+
 ## Zusammenfassung: akzeptiert / modifiziert / abgelehnt
 
 | # | Vorschlag | Ergebnis |
@@ -466,3 +521,4 @@ Entwicklungssitzung, keine vollständige Mitschrift.
 | 8 | Fester Port pro Projekt + venv-Neuanlage (Python 3.12) | akzeptiert (Python-3.14-Inkompatibilitaet behoben; Port-Konflikt zwischen Docker-Container und nativem Prozess als wahre Ursache eines zunaechst als Netzwerk-/uvloop-Bug vermuteten Problems identifiziert) |
 | 9 | Docker-Endverifikation (`.env`-Override-Fix) + Sammel-Infrastruktur fuer echte Tankerkoenig-Daten | akzeptiert (zweiter, unabhaengiger `.env`-Override-Bug in `docker-compose.yml` behoben; Client/Skripte/Tests fuer echte Preisdaten vorbereitet, mangels Registrierungs-Freigabe noch nicht live verifiziert) |
 | 10 | Live-Verifikation Tankerkoenig-API (Timeout- und Null-Preis-Fix) | akzeptiert (Client erstmals erfolgreich gegen die echte API verifiziert; zu knapper Timeout und "geschlossene Station"-Randfall gefunden und behoben, 2 neue Tests) |
+| 11 | Abgleich gegen die tatsaechliche Aufgabenstellung: Nutzerszenarien + Responsible-Design-Doku + zentraler DB-Fehler-Handler | akzeptiert (drei reale Luecken gefunden und geschlossen, davon eine im Code; 1 neuer Regressionstest) |

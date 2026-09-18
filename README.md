@@ -17,6 +17,34 @@ Dortmund, Prof. Falk Howar). Anforderungen siehe Aufgabenstellung
 > Tankstelle und erklärt sie auf Nachfrage in natürlicher Sprache - streng
 > auf Basis der tatsächlich berechneten Zahlen, nie erfunden.
 
+## Problemstellung & Nutzerszenarien
+
+**Problem:** Kraftstoffpreise schwanken mehrmals täglich nach erkennbaren
+Mustern (Tageszeit, Wochentag, langsamer Trend) - wer "auf gut Glück" tankt,
+zahlt im Schnitt mehr, als nötig wäre. Der Dienst macht diese Muster
+sichtbar und übersetzt sie in eine konkrete, verständliche Empfehlung.
+
+Vier repräsentative Nutzerszenarien:
+
+1. **Tankzeit-Entscheidung:** Als Autofahrer will ich vor dem Wochenende
+   wissen, ob ich heute noch oder besser morgen früh tanken sollte - der
+   Dienst zeigt dafür Trend, Vorhersage und ein konkretes Zeitfenster
+   ("beste Tankzeit") für die nächsten 48 Stunden.
+2. **Preisverlauf verstehen:** Als Nutzer will ich den Preisverlauf der
+   letzten 14 Tage einer Tankstelle auf einen Blick sehen, um zu
+   beurteilen, ob der aktuelle Preis im Vergleich zum bisherigen Muster
+   gerade günstig oder teuer ist.
+3. **Frage in natürlicher Sprache:** Als Nutzer will ich nicht selbst Zahlen
+   interpretieren müssen, sondern in eigenen Worten fragen ("wird der Preis
+   heute noch fallen?", "was ist günstiger, E10 oder Diesel?") und eine
+   Antwort erhalten, die sich strikt auf die tatsächlich berechneten Fakten
+   stützt statt auf erfundene Zahlen.
+4. **Vertrauen in die Vorhersage einschätzen:** Als Nutzer will ich wissen,
+   wie sicher eine Vorhersage ist, bevor ich mich darauf verlasse - der
+   Dienst liefert dafür einen erklärten, ausdrücklich nicht als kalibrierte
+   Wahrscheinlichkeit missverständlichen Konfidenzwert, und die KI-Komponente
+   relativiert überzogene Sicherheitsfragen entsprechend.
+
 ## Architekturüberblick
 
 ```
@@ -199,59 +227,10 @@ python -m scripts.generate_sample_data
 ```
 
 **Warum synthetisch statt echte Daten?** Der Cloud-Entwicklungs-Workspace
-hatte keinen Netzwerkzugriff auf GitHub-Rohdaten, und ein historisches
-Massen-Archiv echter Tankerkönig-Daten war zum Zeitpunkt der Entwicklung
-nirgends aktuell/frei zugänglich (siehe AI_DEVELOPMENT_LOG.md, Episode 9).
-Die synthetischen Preise liegen daher unterhalb des aktuellen realen
-Preisniveaus (~1.6-1.8 statt ~2.2 EUR/Liter) - intern konsistent für
-Forecasting/Grounding, aber nicht realitätsgetreu. Sie bleiben unverändert
-als reproduzierbare Basis für Tests/Evaluation bestehen. Echte Daten lassen
-sich zusätzlich **ohne Code-Änderung** einsetzen: entweder `stations.csv`/
-`prices.csv` im selben Spaltenformat in `data/` ablegen (siehe Kommentar in
-`scripts/generate_sample_data.py`), oder echte, wachsende Daten über die
-unten beschriebenen Sammel-Skripte hinzufügen - letzteres ist inzwischen
-produktiv im Einsatz (drei reale Stationen, siehe unten).
-
-## Echte Daten sammeln (optional, vorbereitet)
-
-Zusätzlich zu den synthetischen Beispieldaten gibt es zwei Skripte, um echte,
-über die Zeit wachsende Preisdaten der öffentlichen Tankerkönig-API zu
-sammeln - unabhängig von den synthetischen `data/*.csv` (die für
-reproduzierbare Tests/Evaluation unverändert bleiben). Echte Stationen werden
-dafür als zusätzliche Datenbank-Einträge angelegt.
-
-**Voraussetzung:** ein kostenloser API-Key von
-[onboarding.tankerkoenig.de](https://onboarding.tankerkoenig.de) (die
-Registrierung war während der Entwicklung zunächst wegen Wartungsarbeiten
-des Anbieters gesperrt, siehe `AI_DEVELOPMENT_LOG.md`, Episode 9). Inzwischen
-liegt ein echter Key vor, und die beiden Skripte wurden erfolgreich gegen die
-echte, laufende API verifiziert (reale Stationen gefunden, reale Preise auf
-dem tatsächlichen Marktniveau gespeichert). Dabei gefunden und behoben: ein
-zu knapper, jetzt über `TANKERKOENIG_TIMEOUT_SECONDS` konfigurierbarer
-Timeout, sowie Stationen, die trotz unauffälligem Status keine Preise
-liefern (z.B. vorübergehend geschlossen) - werden jetzt korrekt
-übersprungen statt als Nur-Null-Datensatz gespeichert. Details:
-`AI_DEVELOPMENT_LOG.md`, Episode 10.
-
-```bash
-# .env ergänzen: TANKERKOENIG_API_KEY=<dein-key>
-
-# 1. Einmalig: echte Tankstellen in der Nähe suchen und auswählen
-python -m scripts.discover_real_stations --lat 51.5136 --lng 7.4653 --radius 5
-python -m scripts.discover_real_stations --lat 51.5136 --lng 7.4653 --radius 5 \
-    --pick <uuid1>,<uuid2>,<uuid3> --write
-# .env ergänzen: TANKERKOENIG_STATION_UUIDS=<uuid1>,<uuid2>,<uuid3>
-
-# 2. Wiederkehrend (z.B. stündlich per cron/launchd): aktuelle Preise abrufen
-python -m scripts.collect_real_prices
-```
-
-Ein Cron-Eintrag für stündliches Sammeln:
-
-```
-0 * * * *  cd /pfad/zum/projekt && .venv/bin/python -m scripts.collect_real_prices >> /pfad/zum/projekt/collect.log 2>&1
-```
-
+hatte keinen Netzwerkzugriff auf GitHub-Rohdaten. Echte Daten lassen sich
+jederzeit **ohne Code-Änderung** einsetzen: `stations.csv`/`prices.csv` im
+selben Spaltenformat in `data/` ablegen (siehe Kommentar in
+`scripts/generate_sample_data.py`).
 
 ## Tests
 
@@ -292,20 +271,51 @@ OS-Sandbox mit auf dieses Projektverzeichnis beschränktem Dateizugriff
 ausführen; Zugangsdaten nicht in Prompts/Code/Repository-Historie einbetten;
 destruktive oder sicherheitsrelevante Befehle vor Ausführung bestätigen.
 
+## Verantwortungsvolles Design (Responsible Design)
+
+**Datenschutz:** Es findet kein Login und keine Erfassung personenbezogener
+Daten statt (Anforderung "single local user"). Gespeichert werden
+ausschließlich Tankstellen-Stammdaten (öffentlich, Tankerkönig-Schema),
+Preisdaten sowie `QueryLog`-Einträge (gestellte Frage, Antwort,
+Groundedness-Flag) zur Nachvollziehbarkeit der KI-Komponente - keine
+Nutzer-Identifikatoren, IP-Adressen o.ä. werden persistiert.
+
+**Sicherheit:** Der `TANKERKOENIG_API_KEY` liegt ausschließlich in der
+lokalen, nicht versionierten `.env` (siehe `.gitignore`), nie im Code oder
+in der Git-Historie. Der KI-Agent-Harness lief in einem auf das
+Projektverzeichnis beschränkten, isolierten Cloud-Container ohne Zugriff auf
+persönliche Dateien, Zugangsdaten oder andere Repositories (Details siehe
+Abschnitt "KI-gestützte Entwicklung" oben). Die Anwendung selbst geht von
+einem einzelnen lokalen Nutzer ohne Mehrbenutzer-/Rechteverwaltung aus
+(Scope-Regel der Aufgabenstellung).
+
+**Potenzieller Missbrauch:** `/ask` ist bewusst kein allgemeiner Chatbot,
+sondern strikt an die Kraftstoffpreis-Fakten der jeweiligen Tankstelle
+gebunden (System-Prompt + `app/ai/validation.py`). Themenfremde Fragen
+(z.B. Finanz-/Anlageberatung) werden erkennbar abgelehnt statt beantwortet -
+in der Evaluation eigens als Kategorie `out_of_scope` getestet
+(Ablehnungsquote 1.00, siehe `evaluation/RESULTS.md`). Eine böswillige
+Umleitung der KI-Komponente zu fachfremden Zwecken ist damit erheblich
+erschwert, aber wie bei jedem LLM-Prompt nicht vollständig ausgeschlossen.
+
+**Kennzeichnung KI-generierter Ergebnisse:** Preis, Vorhersage und
+Tankzeit-Empfehlung stammen ausschließlich aus der deterministischen
+Kernlogik (`app/forecasting.py`) - nur die Freitext-*Erklärung* dazu kommt
+vom lokalen Sprachmodell. UI und API halten das strikt getrennt: Zahlen
+erscheinen in eigenen, klar benannten Feldern/Kacheln (`current_price`,
+`predicted_price`, ...), die KI-Antwort erscheint separat im Antwortfeld von
+`/ask` mit einem sichtbaren Warn-Hinweis (`flagged_ungrounded`), falls die
+automatische Prüfung unbelegte Zahlen entdeckt.
+
 ## Bekannte Grenzen / offene Punkte
 
-- Dockerfile/docker-compose.yml wurden real gebaut und gestartet (nicht nur
-  syntaktisch geprüft) - siehe `AI_DEVELOPMENT_LOG.md`, Episode 5 (Nachtrag)
-  und Episode 8.
-- Die KI-Evaluation wurde final gegen das echte lokale Modell (`gemma3:4b`
-  via Ollama) ausgeführt, nicht nur gegen den Mock - siehe
-  `evaluation/RESULTS.md` und `AI_DEVELOPMENT_LOG.md`, Episode 7.
-- Die Sammel-Skripte für echte Tankerkönig-Daten
-  (`scripts/discover_real_stations.py`, `scripts/collect_real_prices.py`)
-  sind inzwischen erfolgreich gegen die echte API verifiziert (siehe
-  Abschnitt "Echte Daten sammeln" und `AI_DEVELOPMENT_LOG.md`, Episode 10) -
-  drei reale Stationen sind angelegt, ein stündlicher Cron-Job sammelt
-  laufend echte Preise.
+- ~~Dockerfile/docker-compose.yml nicht build-getestet~~ - erledigt: auf
+  einem echten Rechner erfolgreich build- und funktionsgetestet (App-Container
+  + echter Ollama-Server, siehe oben und `AI_DEVELOPMENT_LOG.md`, Episode 5).
+- ~~KI-Evaluation nur gegen Mock-Server~~ - erledigt: finaler Lauf gegen das
+  echte lokale Modell (`gemma3:4b`) durchgeführt, drei dabei aufgedeckte reale
+  Probleme behoben und verifiziert (siehe `evaluation/RESULTS.md`,
+  `AI_DEVELOPMENT_LOG.md` Episode 7).
 - Die Vorhersage ist eine einfache, erklärbare statistische Schätzung
   (gleitender Durchschnitt + Saisonalität + linearer Trend), keine
   hochentwickelte Zeitreihenprognose - bewusste Design-Entscheidung zugunsten
@@ -313,5 +323,9 @@ destruktive oder sicherheitsrelevante Befehle vor Ausführung bestätigen.
 - Konfidenzwerte sind heuristisch (Historienlänge + Streuung), keine
   kalibrierte Wahrscheinlichkeit - wird in API-Schema, System-Prompt und UI
   konsistent so kommuniziert.
-- Beispieldaten sind synthetisch (siehe oben); echte Daten sind ohne
-  Code-Änderung einsetzbar.
+- Die mitgelieferten Beispieldaten (`data/stations.csv`/`prices.csv`) sind
+  synthetisch (siehe oben); im laufenden Betrieb sammelt die Anwendung
+  inzwischen zusätzlich echte Preisdaten für 22 reale Tankstellen im Raum
+  Dortmund über die Tankerkönig-API (`scripts/discover_real_stations.py`,
+  `scripts/collect_real_prices.py`), live verifiziert (siehe
+  `AI_DEVELOPMENT_LOG.md`, Episode 10).

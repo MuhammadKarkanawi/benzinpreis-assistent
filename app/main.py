@@ -2,9 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from app.ai.client import AIClient
@@ -71,6 +72,22 @@ app.include_router(forecast.router)
 app.include_router(ask.router)
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+@app.exception_handler(SQLAlchemyError)
+async def database_error_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+    """Zentrale Behandlung fehlschlagender Datenbankzugriffe (Anforderung
+    "Failure handling": persistierte Daten nicht lesbar/schreibbar) - z.B.
+    eine gesperrte oder beschädigte SQLite-Datei. Ohne diesen Handler würde
+    ein solcher Fehler als unbehandelte 500-Exception mit Stacktrace
+    durchschlagen statt als kontrollierte, für Clients auswertbare Antwort.
+    Gilt einheitlich für alle Endpunkte, die über `Depends(get_session)`
+    auf die Datenbank zugreifen (/stations, /prices, /forecast, /ask)."""
+    print(f"[error] Datenbankzugriff fehlgeschlagen: {exc}")
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Datenbank aktuell nicht verfügbar. Bitte später erneut versuchen."},
+    )
 
 
 @app.get("/", include_in_schema=False)

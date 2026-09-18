@@ -110,3 +110,32 @@ def test_ask_unknown_station_reports_error_not_crash(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["error"] is not None
+
+
+def test_database_failure_returns_503_not_crash():
+    """Anforderung 'Failure handling': persistierte Daten nicht lesbar/
+    schreibbar (z.B. gesperrte/beschädigte SQLite-Datei) darf nicht als
+    unbehandelte 500-Exception mit Stacktrace durchschlagen, sondern muss
+    als kontrollierte Antwort ankommen (siehe app/main.py,
+    database_error_handler)."""
+    from sqlalchemy.exc import OperationalError
+
+    class BrokenSession:
+        """Simuliert einen Datenbank-Handle, dessen Zugriff fehlschlägt -
+        ohne echte kaputte Datei anlegen zu müssen."""
+
+        def exec(self, *args, **kwargs):
+            raise OperationalError("select 1", {}, Exception("disk I/O error"))
+
+    def _broken_get_session():
+        yield BrokenSession()
+
+    app.dependency_overrides[get_session] = _broken_get_session
+    try:
+        with TestClient(app, raise_server_exceptions=False) as c:
+            resp = c.get("/stations")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 503
+    assert "Datenbank" in resp.json()["detail"]
