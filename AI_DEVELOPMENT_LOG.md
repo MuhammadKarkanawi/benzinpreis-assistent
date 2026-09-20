@@ -507,6 +507,55 @@ Entwicklungssitzung, keine vollständige Mitschrift.
 
 ---
 
+## Episode 12: Chart-UX verbessert (Datumsbereich + interaktiver Preis-Tooltip)
+
+- **Kontext:** Der Studierende wollte zwei kleinere, aber für die
+  Nachvollziehbarkeit des Preisverlaufs relevante UX-Lücken im Dashboard
+  schließen: (1) das Preisverlauf-Chart zeigte zwar "letzte 14 Tage" als
+  fester Panel-Titel, aber nicht das tatsächliche Start-/Enddatum - relevant,
+  da frisch hinzugefügte echte Tankstellen (siehe Episode 9/10) oft eine
+  kürzere Historie als 14 Tage haben; (2) einzelne Preiswerte an den
+  Zacken/Ecken der Linie ließen sich nur ungefähr ablesen, ohne den exakten
+  Preis und Zeitpunkt zu kennen.
+- **Aufgabe an den Agenten:** In `app/static/index.html`
+  (`drawChart()`-Funktion, reines Canvas ohne Chart-Bibliothek) beide
+  Lücken schließen, ohne die bestehende Preislinie/Min-Max-Beschriftung zu
+  verändern.
+- **Vorschlag/Umsetzung des Agenten:**
+  1. Unterer Rand des Charts um 18px erweitert und dort links/rechts das
+     tatsächliche erste/letzte Datum des angezeigten Zeitraums eingeblendet
+     (Format TT.MM.).
+  2. Chart-Zeichnung von einer einmaligen Funktion in einen
+     zustandsbehafteten Ansatz umgebaut (`chartState`/`paintChart()`), der
+     bei jeder Mausbewegung über den Chart komplett neu zeichnet: eine
+     vertikale Fadenkreuzlinie zum nächstgelegenen Datenpunkt, ein
+     hervorgehobener Punkt sowie ein Tooltip mit exaktem Preis und
+     Zeitstempel (Datum + Uhrzeit). Das Tooltip weicht automatisch zur
+     anderen Seite aus, wenn es sonst über den Chart-Rand hinausragen würde.
+     Zusätzlich `touchmove`/`touchend`-Handler für Touch-Geräte.
+- **Verifikation:** (a) alle 47 automatisierten Tests weiterhin grün
+  (unverändert, da reines Frontend-JavaScript ohne eigene Testsuite); (b)
+  JavaScript-Syntaxprüfung des extrahierten `<script>`-Blocks (`node
+  --check`); (c) **visuelle End-to-End-Verifikation mit einer echten,
+  headless laufenden Chromium-Instanz** (Playwright): Anwendung lokal
+  gestartet, Dashboard geladen, Maus programmatisch über die Chart-Mitte,
+  den linken Rand und den rechten Rand bewegt und je ein Screenshot
+  angefertigt - bestätigt: Tooltip erscheint mit korrektem Preis/Datum,
+  weicht am rechten Rand korrekt zur linken Seite aus, und verschwindet
+  sauber, sobald die Maus den Chart verlässt.
+- **Beobachtung/Risiko:** Beim Zurückspielen der Datei auf den Rechner des
+  Studierenden über die Geräte-Bridge schlug die erste
+  Schreib-Bestätigung zweimal in Folge trotz gemeldetem Erfolg fehl (Datei
+  blieb inhaltlich auf dem alten Stand) - erst ein erzwungener zweiter
+  Schreibversuch mit anschließender Inhaltsprüfung (Zeilenzahl,
+  Stichwort-Grep) übernahm die Änderung tatsächlich. Für alle
+  sicherheitsrelevanten Datei-Übertragungen in diesem Projekt gilt daher:
+  nie dem gemeldeten Erfolg allein vertrauen, sondern den Zielzustand nach
+  jeder Übertragung unabhängig verifizieren - genau das wurde hier auch
+  getan, bevor die Änderung als abgeschlossen gemeldet wurde.
+
+---
+
 ## Zusammenfassung: akzeptiert / modifiziert / abgelehnt
 
 | # | Vorschlag | Ergebnis |
@@ -522,3 +571,4 @@ Entwicklungssitzung, keine vollständige Mitschrift.
 | 9 | Docker-Endverifikation (`.env`-Override-Fix) + Sammel-Infrastruktur fuer echte Tankerkoenig-Daten | akzeptiert (zweiter, unabhaengiger `.env`-Override-Bug in `docker-compose.yml` behoben; Client/Skripte/Tests fuer echte Preisdaten vorbereitet, mangels Registrierungs-Freigabe noch nicht live verifiziert) |
 | 10 | Live-Verifikation Tankerkoenig-API (Timeout- und Null-Preis-Fix) | akzeptiert (Client erstmals erfolgreich gegen die echte API verifiziert; zu knapper Timeout und "geschlossene Station"-Randfall gefunden und behoben, 2 neue Tests) |
 | 11 | Abgleich gegen die tatsaechliche Aufgabenstellung: Nutzerszenarien + Responsible-Design-Doku + zentraler DB-Fehler-Handler | akzeptiert (drei reale Luecken gefunden und geschlossen, davon eine im Code; 1 neuer Regressionstest) |
+| 12 | Chart-UX: Datumsbereich-Anzeige + interaktiver Preis-Tooltip (Fadenkreuzlinie) | akzeptiert (visuell per Playwright-Screenshots end-to-end verifiziert; Datei-Uebertragungs-Flakiness der Geraete-Bridge beobachtet und durch Nachpruefung abgefangen) |
