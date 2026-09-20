@@ -33,7 +33,7 @@
   button { cursor: pointer; background: var(--accent); color: #05221f; font-weight: 600; border: none; }
   button:hover { opacity: 0.9; }
   button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
-  canvas { width: 100%; height: 220px; display: block; }
+  canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
   .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 0.9rem; }
   .stat:last-child { border-bottom: none; }
   .badge { padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
@@ -131,6 +131,18 @@ async function loadStations() {
   sel.innerHTML = stations.map(s => `<option value="${s.uuid}">${s.name} (${s.place})</option>`).join('');
 }
 
+// Haelt Layout/Daten des zuletzt gezeichneten Charts vor, damit die
+// Maus-Hover-Logik (siehe weiter unten) dieselbe Punkt-Geometrie
+// wiederverwenden kann, ohne bei jeder Mausbewegung neu vom Server zu laden.
+let chartState = null;
+
+function chartPointXY(i) {
+  const { points, min, max, pad, plotH, w } = chartState;
+  const x = pad + (i / (points.length - 1)) * (w - 2 * pad);
+  const y = plotH - pad - ((points[i].price - min) / (max - min)) * (plotH - 2 * pad);
+  return { x, y };
+}
+
 function drawChart(points) {
   const canvas = document.getElementById('chart');
   const ctx = canvas.getContext('2d');
@@ -139,28 +151,137 @@ function drawChart(points) {
   canvas.width = rect.width * dpr;
   canvas.height = 220 * dpr;
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, 220);
 
-  if (!points.length) { return; }
+  if (!points.length) {
+    chartState = null;
+    ctx.clearRect(0, 0, rect.width, 220);
+    return;
+  }
   const prices = points.map(p => p.price);
   const min = Math.min(...prices) - 0.01, max = Math.max(...prices) + 0.01;
   const w = rect.width, h = 220, pad = 8;
+  // Unterer Rand reserviert Platz fuer die Datumsbeschriftung (erster/letzter
+  // Tag des Zeitraums), damit sie nicht mit der Preislinie/-beschriftung
+  // ueberlappt.
+  const padBottom = 18;
+  const plotH = h - padBottom;
+  chartState = { points, min, max, pad, plotH, w, h };
+  paintChart();
+}
+
+// Zeichnet den Chart neu - ohne Hover-Overlay, wenn hoverIdx weggelassen wird,
+// sonst zusaetzlich mit Fadenkreuzlinie/Punkt/Tooltip fuer den uebergebenen
+// Punktindex. Muss bei jeder Mausbewegung komplett neu gezeichnet werden
+// (statt nur das Tooltip zu ergaenzen), da Canvas keine "Ebenen" kennt.
+function paintChart(hoverIdx) {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const { points, min, max, pad, plotH, w, h } = chartState;
+  ctx.clearRect(0, 0, w, h);
 
   ctx.strokeStyle = '#4fd1c5';
   ctx.lineWidth = 2;
   ctx.beginPath();
   points.forEach((p, i) => {
-    const x = pad + (i / (points.length - 1)) * (w - 2 * pad);
-    const y = h - pad - ((p.price - min) / (max - min)) * (h - 2 * pad);
+    const { x, y } = chartPointXY(i);
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   });
   ctx.stroke();
 
   ctx.fillStyle = '#93a2b0';
   ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
   ctx.fillText(max.toFixed(3) + ' €', 4, 12);
-  ctx.fillText(min.toFixed(3) + ' €', 4, h - 4);
+  ctx.fillText(min.toFixed(3) + ' €', 4, plotH - 4);
+
+  // Erster und letzter Tag des angezeigten Zeitraums, links-/rechtsbuendig
+  // unter dem Chart - macht sichtbar, welches konkrete Datumsintervall die
+  // "letzten 14 Tage" gerade abdecken (relevant z.B. bei frisch
+  // hinzugefuegten Tankstellen mit kuerzerer Historie als 14 Tage).
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  ctx.fillStyle = '#6b7a89';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(fmtDate(points[0].timestamp), pad, h - 4);
+  ctx.textAlign = 'right';
+  ctx.fillText(fmtDate(points[points.length - 1].timestamp), w - pad, h - 4);
+
+  if (hoverIdx == null) { return; }
+
+  const { x, y } = chartPointXY(hoverIdx);
+
+  // Vertikale Fadenkreuzlinie am Hover-Punkt
+  ctx.strokeStyle = 'rgba(147,162,176,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, plotH);
+  ctx.stroke();
+
+  // Punkt hervorheben
+  ctx.fillStyle = '#4fd1c5';
+  ctx.beginPath();
+  ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Tooltip mit exaktem Preis + Zeitstempel des Punkts
+  const p = points[hoverIdx];
+  const priceStr = p.price.toFixed(3) + ' €';
+  const dateStr = new Date(p.timestamp).toLocaleString('de-DE', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+  ctx.font = 'bold 11px sans-serif';
+  const boxW = Math.max(ctx.measureText(priceStr).width, ctx.measureText(dateStr).width) + 14;
+  const boxH = 34;
+  let boxX = x + 8;
+  if (boxX + boxW > w) { boxX = x - boxW - 8; }
+  let boxY = y - boxH - 6;
+  if (boxY < 0) { boxY = Math.min(y + 10, plotH - boxH); }
+
+  ctx.fillStyle = 'rgba(13,21,29,0.95)';
+  ctx.strokeStyle = '#263241';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) { ctx.roundRect(boxX, boxY, boxW, boxH, 4); } else { ctx.rect(boxX, boxY, boxW, boxH); }
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#e8edf2';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillText(priceStr, boxX + 7, boxY + 14);
+  ctx.fillStyle = '#93a2b0';
+  ctx.font = '10px sans-serif';
+  ctx.fillText(dateStr, boxX + 7, boxY + 27);
 }
+
+// Findet zu einer Maus-/Touch-X-Position den naechstgelegenen Datenpunkt und
+// zeichnet den Chart mit Hover-Overlay fuer diesen Punkt neu.
+function handleChartHover(clientX) {
+  if (!chartState) { return; }
+  const canvas = document.getElementById('chart');
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = clientX - rect.left;
+  let bestIdx = 0, bestDist = Infinity;
+  chartState.points.forEach((_, i) => {
+    const dist = Math.abs(chartPointXY(i).x - mouseX);
+    if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+  });
+  paintChart(bestIdx);
+}
+
+function handleChartLeave() {
+  if (!chartState) { return; }
+  paintChart();
+}
+
+const chartCanvas = document.getElementById('chart');
+chartCanvas.addEventListener('mousemove', (evt) => handleChartHover(evt.clientX));
+chartCanvas.addEventListener('mouseleave', handleChartLeave);
+chartCanvas.addEventListener('touchmove', (evt) => {
+  if (evt.touches.length) { handleChartHover(evt.touches[0].clientX); evt.preventDefault(); }
+}, { passive: false });
+chartCanvas.addEventListener('touchend', handleChartLeave);
 
 async function loadPrices() {
   const data = await fetchJSON(`${API}/prices/${currentStation()}?fuel_type=${currentFuel()}&days=14`);
