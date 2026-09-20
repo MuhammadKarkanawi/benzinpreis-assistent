@@ -103,7 +103,42 @@ Betrieb.
   ```bash
   ollama pull gemma3:4b
   ollama serve   # stellt eine OpenAI-kompatible API unter http://localhost:11434/v1 bereit
+  ollama --version   # installierte Version notieren (siehe unten)
   ```
+
+### Modell, Inference-Server und Prompting im Detail
+
+- **Modell:** `gemma3:4b` (Google Gemma 3, 4B Parameter, text-only genutzt).
+  Gewählt, weil ein reines Text-Modell für diesen Use Case ausreicht
+  (Anforderung erlaubt das explizit) und `gemma3:4b` klein genug ist, um auf
+  einem gewöhnlichen Laptop ohne dedizierte GPU in akzeptabler Latenz zu
+  laufen (siehe gemessene Latenzen in `evaluation/RESULTS.md`, ~7,7s
+  grounded).
+- **Inference-Server:** Ollama, siehe `ollama --version` auf dem jeweiligen
+  Ausführungsrechner für die exakt installierte Version - bewusst nicht
+  hier fest im README eingetragen, da Ollama sich selbst aktualisiert und
+  eine hier notierte Version schnell veralten würde.
+- **Erwarteter Hardware-/Speicherbedarf:** Als Q4-quantisiertes 4B-Modell
+  liegt der Downloadgröße/RAM-Bedarf von `gemma3:4b` grob im Bereich von
+  wenigen GB (üblich für diese Modellklasse); lief im Rahmen dieses Projekts
+  auf einem gewöhnlichen Laptop ohne dedizierte GPU. Exakte, tagesaktuelle
+  Angaben siehe die offizielle Ollama-Modellseite für `gemma3:4b`.
+- **Modell-Parameter:** `temperature=0.2` (siehe `app/ai/client.py`) - bewusst
+  niedrig, um bei einer faktenbasierten Erklärungsaufgabe reproduzierbare,
+  wenig "kreative" Ausgaben zu bevorzugen.
+- **Prompt-/Message-Vorlagen** (vollständig in `app/ai/prompts.py`):
+  - `SYSTEM_PROMPT_GROUNDED`: verpflichtet das Modell, ausschließlich die im
+    Abschnitt FAKTEN übergebenen Zahlen zu verwenden, nichts zu erfinden,
+    themenfremde Fragen abzulehnen, den Konfidenzwert explizit als
+    heuristisch (nicht kalibriert) zu kommunizieren, Vorhersagen nicht auf
+    andere Kraftstoffsorten zu übertragen, bei Anfragen weit außerhalb des
+    Vorhersagehorizonts auf fehlende Grundlage hinzuweisen, und kurz (2-4
+    Sätze) auf Deutsch zu antworten.
+  - `SYSTEM_PROMPT_UNGROUNDED`: für den Baseline-Vergleich ohne Kontext -
+    weist das Modell an, offen zu sagen, dass keine Daten vorliegen, statt
+    Zahlen zu erfinden.
+  - `build_messages()` fügt die berechneten Fakten (JSON) als Teil der
+    Nutzer-Nachricht ein, wenn `use_context=True`.
 
 ### Lokal ohne Docker
 
